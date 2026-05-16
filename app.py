@@ -167,6 +167,7 @@ with col_left:
             try:
                 raw_bytes = uploaded_file.read()
                 file_bytes = np.asarray(bytearray(raw_bytes), dtype=np.uint8)
+                uploaded_file.seek(0)  # reset file pointer after read
                 image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
             except Exception as e:
                 st.error(f"⚠️ Could not read the file: {e}. Please upload a valid JPG, PNG, or WebP image.")
@@ -175,7 +176,7 @@ with col_left:
         if image is not None:
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
             st.subheader("🔍 Preview")
-            st.image(image, channels="BGR", caption="Uploaded Image", use_column_width=True)
+            st.image(image, channels="BGR", caption="Uploaded Image", use_container_width=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
 with col_right:
@@ -227,14 +228,14 @@ col_perf1, col_perf2 = st.columns(2)
 with col_perf1:
     st.markdown("**Training Accuracy Curve**")
     if os.path.exists("Figure_2.png"):
-        st.image("Figure_2.png", use_column_width=True)
+        st.image("Figure_2.png", use_container_width=True)
     else:
         st.info("Figure_2.png not found.")
 
 with col_perf2:
     st.markdown("**Training Loss Curve**")
     if os.path.exists("Figure_1.png"):
-        st.image("Figure_1.png", use_column_width=True)
+        st.image("Figure_1.png", use_container_width=True)
     else:
         st.info("Figure_1.png not found.")
 
