@@ -5,6 +5,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
+from gradcam import make_gradcam_heatmap, overlay_heatmap
 
 st.set_page_config(
     page_title="PixelTruth",
@@ -87,13 +88,19 @@ def preprocess_image(image):
 
 def predict_image(image):
     if model is None:
-        return None, None
+        return None, None, None
     processed_image = preprocess_image(image)
     prediction = model.predict(processed_image, verbose=0)
     class_label = np.argmax(prediction, axis=1)[0]
     confidence = float(np.max(prediction))
     label = "Real" if class_label == 0 else "Fake"
-    return label, confidence
+    return label, confidence, processed_image
+
+def find_last_conv_layer(model):
+    for layer in reversed(model.layers):
+        if "conv" in layer.name.lower():
+            return layer.name
+    raise ValueError("No convolution layer found in model")
 
 # ----------------------- HEADER / HERO ---------------------
 st.markdown("<h1 class='main-title'>DEEPFAKE SENTINEL</h1>", unsafe_allow_html=True)
@@ -159,69 +166,164 @@ with col_right:
 
     if uploaded_file is None:
         st.write("Upload an image on the left to run deepfake detection.")
+
     elif model is None:
         st.error("Model could not be loaded. Detection is unavailable.")
+
     else:
         with st.spinner("Analyzing image with the deepfake model..."):
-            label, confidence = predict_image(image)
+
+            label, confidence, processed_image = predict_image(image)
 
         if label is not None:
-            style_class = "result-real" if label == "Real" else "result-fake"
-            icon = "🟢" if label == "Real" else "🔴"
-            headline = "Authentic image" if label == "Real" else "Deepfake suspected"
 
-            st.markdown(f"<div class='{style_class}' style='padding-left:0.8rem;'>", unsafe_allow_html=True)
+            # ---------------- Grad-CAM ----------------
+            try: 
+                backbone_model = model.layers[0] 
+                last_conv_layer = find_last_conv_layer(backbone_model) 
+                heatmap = make_gradcam_heatmap( processed_image, backbone_model, last_conv_layer ) 
+                gradcam_image = overlay_heatmap(image, heatmap) 
+            except Exception as e: 
+                st.warning( f"Grad-CAM visualization could not be generated: {str(e)}" ) 
+                gradcam_image = None
+
+            # ---------------- Result Styling ----------------
+            style_class = (
+                "result-real"
+                if label == "Real"
+                else "result-fake"
+            )
+
+            icon = "🟢" if label == "Real" else "🔴"
+
+            headline = (
+                "Authentic image"
+                if label == "Real"
+                else "Deepfake suspected"
+            )
+
+            # ---------------- Prediction Card ----------------
+            st.markdown(
+                f"<div class='{style_class}' style='padding-left:0.8rem;'>",
+                unsafe_allow_html=True
+            )
+
             st.markdown(f"### {icon} {headline}")
+
             st.markdown(f"**Model prediction:** {label}")
+
             st.progress(confidence)
+
             st.caption(f"Confidence: {confidence * 100:.1f}%")
+
             st.markdown("</div>", unsafe_allow_html=True)
 
+            # ---------------- Explanation Message ----------------
             if label == "Fake":
+
                 st.error(
-                    "The model detected patterns consistent with deepfake artifacts, "
-                    "such as irregular blending, lighting mismatches, or unusual facial textures."
+                    "The model detected patterns consistent with "
+                    "deepfake artifacts, such as irregular blending, "
+                    "lighting mismatches, or unusual facial textures."
                 )
+
             else:
+
                 st.success(
                     "The model did not detect strong deepfake indicators. "
-                    "The image appears consistent with natural, unaltered content."
+                    "The image appears consistent with natural, "
+                    "unaltered content."
                 )
+
+            # ---------------- Grad-CAM Visualization ----------------
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            st.subheader("🧠 Model Explainability (Grad-CAM)")
+
+            col_gc1, col_gc2 = st.columns(2)
+
+            with col_gc1:
+
+                st.image(
+                    image,
+                    channels="BGR",
+                    caption="Original Image",
+                    use_column_width=True
+                )
+
+            with col_gc2:
+
+                if gradcam_image is not None:
+
+                    st.image(
+                        gradcam_image,
+                        channels="BGR",
+                        caption="Grad-CAM Heatmap",
+                        use_column_width=True
+                    )
+
+                else:
+
+                    st.info(
+                        "Grad-CAM visualization unavailable for this model."
+                    )
+
+            st.caption(
+                "Highlighted regions represent areas the model focused on "
+                "during prediction."
+            )
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+
 # ----------------------- MODEL PERFORMANCE -----------------
+
 st.markdown("<br>", unsafe_allow_html=True)
+
 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+
 st.subheader("📉 Training Performance")
 
 col_perf1, col_perf2 = st.columns(2)
 
 with col_perf1:
+
     st.markdown("**Training Accuracy Curve**")
+
     if os.path.exists("Figure_2.png"):
+
         st.image("Figure_2.png", use_column_width=True)
+
     else:
+
         st.info("Figure_2.png not found.")
 
+
 with col_perf2:
+
     st.markdown("**Training Loss Curve**")
+
     if os.path.exists("Figure_1.png"):
+
         st.image("Figure_1.png", use_column_width=True)
+
     else:
+
         st.info("Figure_1.png not found.")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
+
 # ----------------------- FOOTER ----------------------------
+
 st.markdown(
-    """
+    '''
 <div style="text-align:center; margin-top:3rem; color:#6b7280; font-size:0.8rem;">
   <hr style="border-color:rgba(75,85,99,0.6);" />
   <p>🕵️ PixelTruth • Built with Streamlit & TensorFlow</p>
- 
 </div>
-""",
+''',
     unsafe_allow_html=True,
 )
+
 
