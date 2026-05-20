@@ -3,9 +3,9 @@ import cv2
 import numpy as np
 import streamlit as st
 import streamlit.components.v1 as components
+from preprocessing import decode_image_bytes, preprocess_image_array, preprocess_image_bytes
 import logging
 from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.image import img_to_array
 
 from gradcam import make_gradcam_heatmap, overlay_heatmap
 from exceptions import PreprocessingError, ModelExecutionError
@@ -142,16 +142,40 @@ def render_missing_model_help():
 
 # ----------------------- IMAGE PIPELINE --------------------
 def preprocess_image(image):
+    return preprocess_image_array(image)
+
+
+def preprocess_uploaded_image(image_bytes):
+    return preprocess_image_bytes(image_bytes)
+
+
+preprocess_uploaded_image.cache_clear = preprocess_image_bytes.cache_clear
+preprocess_uploaded_image.cache_info = preprocess_image_bytes.cache_info
+
+def preprocess_image(image):
+    # Use the shared preprocessing implementation when possible
     try:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # fix: OpenCV loads BGR; model expects RGB (trained via PIL/ImageDataGenerator)
+        # If preprocessing was implemented in `preprocessing.py`, prefer that
+        return preprocess_image_array(image)
+    except Exception:
+        # Fallback to an inline implementation (keeps compatibility with main branch)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, (96, 96))
         image = img_to_array(image)
         image = np.expand_dims(image, axis=0)
         image = image / 255.0
         return image
-    except Exception as e:
-        logger.error(f"Image preprocessing failed: {e}", exc_info=True)
-        raise PreprocessingError(f"Failed to preprocess image: {str(e)}") from e
+
+
+def preprocess_uploaded_image(image_bytes):
+    # Keep the PR's caching wrapper which delegates to preprocessing.preprocess_image_bytes
+    return preprocess_image_bytes(image_bytes)
+
+
+# Expose cache control helpers so tests and callers can clear or inspect cache
+preprocess_uploaded_image.cache_clear = preprocess_image_bytes.cache_clear
+preprocess_uploaded_image.cache_info = preprocess_image_bytes.cache_info
+
 
 def predict_image(image):
     if model is None:
@@ -166,13 +190,6 @@ def predict_image(image):
     except Exception as e:
         logger.error(f"Model inference failed: {e}", exc_info=True)
         raise ModelExecutionError(f"Model prediction failed: {str(e)}") from e
-
-def find_last_conv_layer(model):
-    for layer in reversed(model.layers):
-        if "conv" in layer.name.lower():
-            return layer.name
-    raise ValueError("No convolution layer found in model")
-
 # ----------------------- HEADER / HERO ---------------------
 st.markdown("<h1 class='main-title'>DEEPFAKE SENTINEL</h1>", unsafe_allow_html=True)
 st.markdown(
@@ -222,6 +239,7 @@ with col_left:
 
     MAX_FILE_SIZE_MB = 10
     MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+    uploaded_image_bytes = None
 
     if uploaded_file is not None:
         if uploaded_file.size > MAX_FILE_SIZE_BYTES:
@@ -234,12 +252,9 @@ with col_left:
         else:
             try:
                 raw_bytes = uploaded_file.read()
-                file_bytes = np.asarray(bytearray(raw_bytes), dtype=np.uint8)
+                uploaded_image_bytes = raw_bytes
                 uploaded_file.seek(0)  # reset file pointer after read
-                image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-                # FIX: cv2.imdecode returns None for corrupted/invalid images without raising an exception
-                if image is None:
-                    st.error("⚠️ The uploaded file appears to be corrupted or is not a valid image. Please upload a valid JPG, PNG, or WebP file.")
+                image = decode_image_bytes(raw_bytes)
             except Exception as e:
                 st.error(f"⚠️ Could not read the file: {e}. Please upload a valid JPG, PNG, or WebP image.")
                 image = None
@@ -261,10 +276,19 @@ with col_right:
         st.error("Model could not be loaded. Detection is unavailable.")
 
         render_missing_model_help()
+    elif image is None:
+        st.info("Upload a valid image to run deepfake detection.")
     else:
         with st.spinner("Analyzing image with the deepfake model..."):
             try:
-                label, confidence, processed_image = predict_image(image)
+                if uploaded_image_bytes is not None:
+                    processed_image = preprocess_uploaded_image(uploaded_image_bytes)
+                    prediction = model.predict(processed_image, verbose=0)
+                    class_label = np.argmax(prediction, axis=1)[0]
+                    confidence = float(np.max(prediction))
+                    label = "Real" if class_label == 0 else "Fake"
+                else:
+                    label, confidence, processed_image = predict_image(image)
             except PreprocessingError as e:
                 logger.error(f"Caught PreprocessingError in UI: {e}", exc_info=True)
                 st.error("⚠️ There was an issue processing the uploaded image. Please ensure it is a valid and uncorrupted image file.")
