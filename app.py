@@ -244,10 +244,6 @@ with col_right:
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.subheader("📊 Detection Result")
 
-    if uploaded_file is not None and model is None:
-        # Load the cached model only when inference is actually needed.
-        model = load_deepfake_model()
-
     if uploaded_file is None:
         st.write("Upload an image on the left to run deepfake detection.")
 
