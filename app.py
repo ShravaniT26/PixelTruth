@@ -1,18 +1,21 @@
 import os
-import cv2
 import numpy as np
 import pandas as pd
 from datetime import datetime
 import streamlit as st
 import streamlit.components.v1 as components
-from preprocessing import decode_image_bytes, preprocess_image_array, preprocess_image_bytes
 import logging
+
+from config import LOW_CONFIDENCE_THRESHOLD, LOG_FORMAT
+from predict import preprocess_image, predict_image_tuple
+from preprocessing import decode_image_bytes, preprocess_image_bytes
+from gradcam import make_gradcam_heatmap, overlay_heatmap, find_last_conv_layer
+from exceptions import PreprocessingError, ModelExecutionError
+from model_utils import ensure_model_file, get_model_path, get_model_url, get_model_sha256
+
 from tensorflow.keras.models import load_model
 
-from gradcam import make_gradcam_heatmap, overlay_heatmap
-from exceptions import PreprocessingError, ModelExecutionError
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
 from metrics import (
@@ -25,7 +28,6 @@ from metrics import (
     get_roc_curve_caption,
     get_dataset_distribution_caption,
 )
-from model_utils import ensure_model_file, get_model_path, get_model_url, get_model_sha256
 
 st.set_page_config(
     page_title="PixelTruth",
@@ -86,12 +88,6 @@ footer {visibility: hidden;}
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# ---- Confidence threshold for the "Uncertain" display state ----
-# Predictions whose winning softmax probability is below this value are
-# shown as "Low Confidence — Uncertain" instead of a firm Real/Fake verdict.
-# Raise or lower this value to widen or narrow the uncertain band.
-LOW_CONFIDENCE_THRESHOLD = 0.70
-
 # ----------------------- LOAD MODEL ------------------------
 MODEL_PATH = get_model_path()
 MODEL_URL = get_model_url()
@@ -142,56 +138,6 @@ def render_missing_model_help():
         """
     )
 
-# ----------------------- IMAGE PIPELINE --------------------
-def preprocess_image(image):
-    return preprocess_image_array(image)
-
-
-def preprocess_uploaded_image(image_bytes):
-    return preprocess_image_bytes(image_bytes)
-
-
-preprocess_uploaded_image.cache_clear = preprocess_image_bytes.cache_clear
-preprocess_uploaded_image.cache_info = preprocess_image_bytes.cache_info
-
-def preprocess_image(image):
-    # Use the shared preprocessing implementation when possible
-    try:
-        # If preprocessing was implemented in `preprocessing.py`, prefer that
-        return preprocess_image_array(image)
-    except Exception:
-        # Fallback to an inline implementation (keeps compatibility with main branch)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, (96, 96))
-        image = img_to_array(image)
-        image = np.expand_dims(image, axis=0)
-        image = image / 255.0
-        return image
-
-
-def preprocess_uploaded_image(image_bytes):
-    # Keep the PR's caching wrapper which delegates to preprocessing.preprocess_image_bytes
-    return preprocess_image_bytes(image_bytes)
-
-
-# Expose cache control helpers so tests and callers can clear or inspect cache
-preprocess_uploaded_image.cache_clear = preprocess_image_bytes.cache_clear
-preprocess_uploaded_image.cache_info = preprocess_image_bytes.cache_info
-
-
-def predict_image(image):
-    if model is None:
-        return None, None, None
-    processed_image = preprocess_image(image)
-    try:
-        prediction = model.predict(processed_image, verbose=0)
-        class_label = np.argmax(prediction, axis=1)[0]
-        confidence = float(np.max(prediction))
-        label = "Real" if class_label == 0 else "Fake"
-        return label, confidence, processed_image
-    except Exception as e:
-        logger.error(f"Model inference failed: {e}", exc_info=True)
-        raise ModelExecutionError(f"Model prediction failed: {str(e)}") from e
 # ----------------------- HEADER / HERO ---------------------
 st.markdown("<h1 class='main-title'>DEEPFAKE SENTINEL</h1>", unsafe_allow_html=True)
 st.markdown(
@@ -283,14 +229,15 @@ with col_right:
     else:
         with st.spinner("Analyzing image with the deepfake model..."):
             try:
+                # Use the unified pipeline — bytes path preferred when available
                 if uploaded_image_bytes is not None:
-                    processed_image = preprocess_uploaded_image(uploaded_image_bytes)
+                    processed_image = preprocess_image(uploaded_image_bytes)
                     prediction = model.predict(processed_image, verbose=0)
                     class_label = np.argmax(prediction, axis=1)[0]
                     confidence = float(np.max(prediction))
                     label = "Real" if class_label == 0 else "Fake"
                 else:
-                    label, confidence, processed_image = predict_image(image)
+                    label, confidence, processed_image = predict_image_tuple(image)
             except PreprocessingError as e:
                 logger.error(f"Caught PreprocessingError in UI: {e}", exc_info=True)
                 st.error("⚠️ There was an issue processing the uploaded image. Please ensure it is a valid and uncorrupted image file.")
@@ -442,12 +389,8 @@ with col_perf1:
     st.markdown("**Training Accuracy Curve**")
 
     if os.path.exists("Figure_2.png"):
-
-        st.image("Figure_2.png", use_column_width=True)
-
         st.image("Figure_2.png", use_container_width=True)
     else:
-
         st.info("Figure_2.png not found.")
 
 
@@ -456,13 +399,8 @@ with col_perf2:
     st.markdown("**Training Loss Curve**")
 
     if os.path.exists("Figure_1.png"):
-
-        st.image("Figure_1.png", use_column_width=True)
-
         st.image("Figure_1.png", use_container_width=True)
-
     else:
-
         st.info("Figure_1.png not found.")
 
 st.markdown("</div>", unsafe_allow_html=True)

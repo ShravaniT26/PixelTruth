@@ -4,11 +4,7 @@ import shutil
 import urllib.request
 from pathlib import Path
 
-
-DEFAULT_MODEL_PATH = "deepfake_detection_model.h5"
-MODEL_PATH_ENV = "PIXELTRUTH_MODEL_PATH"
-MODEL_URL_ENV = "PIXELTRUTH_MODEL_URL"
-MODEL_SHA256_ENV = "PIXELTRUTH_MODEL_SHA256"
+from config import DEFAULT_MODEL_PATH, MODEL_PATH_ENV, MODEL_URL_ENV, MODEL_SHA256_ENV
 
 
 def get_model_path() -> str:
