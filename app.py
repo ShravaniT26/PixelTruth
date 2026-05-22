@@ -3,21 +3,17 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 import streamlit as st
-import streamlit.components.v1 as components
-import logging
-
-from config import LOW_CONFIDENCE_THRESHOLD, LOG_FORMAT
-from predict import preprocess_image, predict_image_tuple
 from preprocessing import decode_image_bytes, preprocess_image_bytes
-from gradcam import make_gradcam_heatmap, overlay_heatmap, find_last_conv_layer
+import logging
+from gradcam import make_gradcam_heatmap, overlay_heatmap
 from exceptions import PreprocessingError, ModelExecutionError
-from model_utils import ensure_model_file, get_model_path, get_model_url, get_model_sha256
-
-from tensorflow.keras.models import load_model
-
-logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
-logger = logging.getLogger(__name__)
-
+from inference import (
+    preprocess_image,
+    preprocess_uploaded_image as _preprocess_uploaded_image,
+    predict_image as _predict_image,
+    find_last_conv_layer,
+    load_model_safe,
+)
 from metrics import (
     get_sample_metrics,
     get_confusion_matrix_plot,
@@ -28,6 +24,10 @@ from metrics import (
     get_roc_curve_caption,
     get_dataset_distribution_caption,
 )
+from model_utils import get_model_path, get_model_url, get_model_sha256
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+logger = logging.getLogger(__name__)
 
 st.set_page_config(
     page_title="PixelTruth",
@@ -88,6 +88,12 @@ footer {visibility: hidden;}
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
+# ---- Confidence threshold for the "Uncertain" display state ----
+# Predictions whose winning softmax probability is below this value are
+# shown as "Low Confidence — Uncertain" instead of a firm Real/Fake verdict.
+# Raise or lower this value to widen or narrow the uncertain band.
+LOW_CONFIDENCE_THRESHOLD = 0.70
+
 # ----------------------- LOAD MODEL ------------------------
 MODEL_PATH = get_model_path()
 MODEL_URL = get_model_url()
@@ -97,17 +103,22 @@ MODEL_SHA256 = get_model_sha256()
 @st.cache_resource
 def load_deepfake_model():
     try:
-        model_file_path = ensure_model_file(
+        return load_model_safe(
             model_path=MODEL_PATH,
             model_url=MODEL_URL,
             model_sha256=MODEL_SHA256,
             download_if_missing=True,
         )
-        return load_model(model_file_path)
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
         return None
 
+# Do not load the model at import time; tests and static analysis may
+# import this module without wanting heavy model-loading side effects.
+model = None
+
+# Load the cached model during Streamlit execution so predictions can run
+# when a configured model file or download source is available.
 model = load_deepfake_model()
 
 
@@ -138,6 +149,26 @@ def render_missing_model_help():
         """
     )
 
+# ----------------------- IMAGE PIPELINE --------------------
+
+# For uploaded-bytes preprocessing we reuse the lru-cached helper from
+# `preprocessing.py`. Expose it under the app-level name so tests can
+# call `preprocess_uploaded_image.cache_clear()` etc.
+preprocess_uploaded_image = _preprocess_uploaded_image
+try:
+    preprocess_uploaded_image.cache_clear = preprocess_image_bytes.cache_clear
+    preprocess_uploaded_image.cache_info = preprocess_image_bytes.cache_info
+except Exception:
+    # If underlying function doesn't expose cache helpers, ignore.
+    pass
+
+# Mark exported helper as used so linters don't report an unused-import
+_ = preprocess_image
+
+
+def predict_image(image):
+    # Use the module-level model variable so tests can patch app.model.
+    return _predict_image(model, image)
 # ----------------------- HEADER / HERO ---------------------
 st.markdown("<h1 class='main-title'>DEEPFAKE SENTINEL</h1>", unsafe_allow_html=True)
 st.markdown(
@@ -146,7 +177,7 @@ st.markdown(
 )
 
 if os.path.exists("coverpage.png"):
-    st.image("coverpage.png", use_column_width=True)
+    st.image("coverpage.png", use_container_width=True)
 
 # ----------------------- TOP INFO SECTION ------------------
 col_info_left, col_info_right = st.columns([2, 1])
@@ -229,15 +260,14 @@ with col_right:
     else:
         with st.spinner("Analyzing image with the deepfake model..."):
             try:
-                # Use the unified pipeline — bytes path preferred when available
                 if uploaded_image_bytes is not None:
-                    processed_image = preprocess_image(uploaded_image_bytes)
+                    processed_image = preprocess_uploaded_image(uploaded_image_bytes)
                     prediction = model.predict(processed_image, verbose=0)
                     class_label = np.argmax(prediction, axis=1)[0]
                     confidence = float(np.max(prediction))
                     label = "Real" if class_label == 0 else "Fake"
                 else:
-                    label, confidence, processed_image = predict_image_tuple(image)
+                    label, confidence, processed_image = predict_image(image)
             except PreprocessingError as e:
                 logger.error(f"Caught PreprocessingError in UI: {e}", exc_info=True)
                 st.error("⚠️ There was an issue processing the uploaded image. Please ensure it is a valid and uncorrupted image file.")
@@ -346,7 +376,7 @@ with col_right:
                     image,
                     channels="BGR",
                     caption="Original Image",
-                    use_column_width=True
+                    use_container_width=True
                 )
 
             with col_gc2:
@@ -357,7 +387,7 @@ with col_right:
                         gradcam_image,
                         channels="BGR",
                         caption="Grad-CAM Heatmap",
-                        use_column_width=True
+                        use_container_width=True
                     )
 
                 else:
@@ -389,8 +419,10 @@ with col_perf1:
     st.markdown("**Training Accuracy Curve**")
 
     if os.path.exists("Figure_2.png"):
+
         st.image("Figure_2.png", use_container_width=True)
     else:
+
         st.info("Figure_2.png not found.")
 
 
@@ -399,8 +431,11 @@ with col_perf2:
     st.markdown("**Training Loss Curve**")
 
     if os.path.exists("Figure_1.png"):
+
         st.image("Figure_1.png", use_container_width=True)
+
     else:
+
         st.info("Figure_1.png not found.")
 
 st.markdown("</div>", unsafe_allow_html=True)
