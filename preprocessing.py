@@ -5,6 +5,16 @@ import numpy as np
 from pathlib import Path
 
 
+__all__ = [
+    "preprocess_image_array",
+    "preprocess_image_from_path",
+    "batch_preprocess",
+    "decode_image_bytes",
+    "preprocess_image_bytes",
+    "get_image_metadata",
+    "validate_image_dimensions",
+]
+
 TARGET_IMAGE_SIZE = (96, 96)
 
 MIN_IMAGE_DIM = 10
@@ -20,10 +30,12 @@ def validate_image_dimensions(image: np.ndarray) -> None:
 
 def preprocess_image_array(image: np.ndarray) -> np.ndarray:
     validate_image_dimensions(image)
-if image.ndim == 2 or image.shape[2] == 1:
-    image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-else:
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)    image = cv2.resize(image, TARGET_IMAGE_SIZE)
+    if image.ndim == 2 or image.shape[2] == 1:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+    else:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+   
+    image = cv2.resize(image, TARGET_IMAGE_SIZE)
     image = image.astype("float32")
     image = np.expand_dims(image, axis=0)
     image = image / 255.0
