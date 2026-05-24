@@ -19,10 +19,11 @@ def validate_image_dimensions(image: np.ndarray) -> None:
 
 def preprocess_image_array(image: np.ndarray) -> np.ndarray:
     validate_image_dimensions(image)
-if image.ndim == 2 or image.shape[2] == 1:
-    image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-else:
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)    image = cv2.resize(image, TARGET_IMAGE_SIZE)
+    if image.ndim == 2 or image.shape[2] == 1:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+    else:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, IMAGE_SIZE)
     image = image.astype("float32")
     image = np.expand_dims(image, axis=0)
     image = image / 255.0
@@ -72,3 +73,4 @@ def decode_image_bytes(image_bytes: bytes) -> np.ndarray:
 def preprocess_image_bytes(image_bytes: bytes) -> np.ndarray:
     """Decode *and* preprocess raw image bytes in one shot."""
     return preprocess_image_array(decode_image_bytes(image_bytes))
+
