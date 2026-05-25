@@ -1,9 +1,9 @@
 from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dropout, Dense, BatchNormalization, GlobalAveragePooling2D
+from tensorflow.keras.layers import Dropout, Dense, BatchNormalization, GlobalAveragePooling2D, Rescaling, RandomFlip
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
 
 DATASET_PATH = "real_and_fake_face_detection/real_vs_fake/real-vs-fake/train"
 IMAGE_SIZE = (96, 96)
@@ -36,17 +36,23 @@ val = val_datagen.flow_from_directory(DATASET_PATH,
 
 mnet = MobileNetV2(include_top=False, weights="imagenet", input_shape=(IMAGE_SIZE[0], IMAGE_SIZE[1], 3))
 
-model = Sequential([mnet,
-                    GlobalAveragePooling2D(),
-                    Dense(512, activation="relu"),
-                    BatchNormalization(),
-                    Dropout(0.3),
-                    Dense(128, activation="relu"),
-                    Dropout(0.1),
-                    Dense(2, activation="softmax")])
+model = Sequential([
+    RandomFlip("horizontal"),
+    Rescaling(1./255),
+    mnet,
+    GlobalAveragePooling2D(),
+    Dense(512, activation="relu"),
+    BatchNormalization(),
+    Dropout(0.3),
+    Dense(128, activation="relu"),
+    Dropout(0.1),
+    Dense(1, activation="sigmoid")
+    ])
 
-model.layers[0].trainable = False
-model.compile(loss="sparse_categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
+mnet.trainable = False
+model.compile(loss="binary_crossentropy",
+               optimizer="adam",
+               metrics=["accuracy"])
 model.summary()
 
 def scheduler(epoch):
