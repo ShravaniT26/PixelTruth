@@ -6,7 +6,7 @@ import streamlit as st
 from preprocessing import decode_image_bytes, preprocess_image_bytes
 import logging
 
-from gradcam import make_gradcam_heatmap, overlay_heatmap
+from gradcam import get_backbone_submodel, make_gradcam_heatmap, overlay_heatmap
 
 from exceptions import (
     PreprocessingError,
@@ -359,7 +359,8 @@ with col_right:
             # --- Grad-CAM (best-effort, non-blocking) ---
             gradcam_image = None
             try:
-                backbone_model  = model.layers[0]
+                # Dynamic lookup avoids coupling Grad-CAM to layer ordering.
+                backbone_model  = get_backbone_submodel(model)
                 last_conv_layer = find_last_conv_layer(backbone_model)
                 heatmap         = make_gradcam_heatmap(processed_img, backbone_model, last_conv_layer)
                 gradcam_image   = overlay_heatmap(bgr_image, heatmap)
