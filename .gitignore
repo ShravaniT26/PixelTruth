@@ -6,3 +6,4 @@ dataset.zip
 *.h5
 
 .github/
+.DS_Store
