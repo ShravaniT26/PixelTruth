@@ -11,6 +11,7 @@ from preprocessing import (
 )
 import logging
 
+from history import init_db, save_prediction, load_history, clear_history
 from gradcam import get_backbone_submodel, make_gradcam_heatmap, overlay_heatmap
 
 from exceptions import (
@@ -140,6 +141,7 @@ try:
     with st.spinner("Loading AI model..."):
         model = load_cached_model(get_model_mtime())
 
+    init_db()
     st.success("Model initialized successfully.")
 
 except Exception as e:
@@ -391,6 +393,13 @@ with col_right:
                 "Confidence (%)": f"{confidence * 100:.1f}",
                 "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             })
+            
+            save_prediction(
+                filename=uploaded_file.name,
+                verdict=label,
+                confidence_pct=round(confidence * 100, 1),
+                face_detected=int(face_detected),
+            )
 
         progress_bar.empty()
 
@@ -510,12 +519,13 @@ with col_right:
 
 # ----------------------- PREDICTION HISTORY / CSV EXPORT --
 
-if st.session_state.get("prediction_history"):
+history_rows = load_history()
+if history_rows:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
     st.subheader("🗂 Prediction History")
 
-    history_df = pd.DataFrame(st.session_state.prediction_history)
+    history_df = pd.DataFrame(history_rows)
     st.dataframe(history_df, use_container_width=True)
 
     csv_data = history_df.to_csv(index=False).encode("utf-8")
@@ -526,6 +536,11 @@ if st.session_state.get("prediction_history"):
         file_name=f"pixeltruth_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
         mime="text/csv",
     )
+
+    if st.button("🗑 Clear History"):
+        clear_history()
+        st.session_state.prediction_history = []
+        st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
