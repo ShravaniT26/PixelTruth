@@ -326,11 +326,9 @@ with col_right:
             processed_img = None
 
             try:
-                processed_img = preprocess_uploaded_image(raw_bytes)
-                prediction    = model.predict(processed_img, verbose=0)
-                class_label   = int(np.argmax(prediction, axis=1)[0])
-                confidence    = float(np.max(prediction))
-                label         = "Real" if class_label == 0 else "Fake"
+                label, confidence, processed_img = predict_image(bgr_image)
+                if label is None or confidence is None or processed_img is None:
+                    raise ModelExecutionError("Model is not available for inference.")
 
             except PreprocessingError as e:
                 logger.error(f"PreprocessingError for {uploaded_file.name}: {e}", exc_info=True)
