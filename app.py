@@ -7,7 +7,6 @@ from preprocessing import (
     decode_image_bytes,
     preprocess_image_bytes,
     detect_and_crop_face,
-    preprocess_image_array,
 )
 import logging
 import hashlib
@@ -24,9 +23,10 @@ from exceptions import (
 from inference import (
     preprocess_image,
     preprocess_uploaded_image as _preprocess_uploaded_image,
-    predict_image as _predict_image,
     find_last_conv_layer,
 )
+
+from predict import predict_image as _shared_predict_image
 
 from metrics import (
     load_cached_metrics,
@@ -180,7 +180,7 @@ if "prediction_csv" not in st.session_state:
 
 
 def predict_image(image):
-    return _predict_image(model, image)
+    return _shared_predict_image(image)
 
 
 # ----------------------- HEADER / HERO ---------------------
@@ -349,11 +349,10 @@ with col_right:
                         3
                     )
 
-                processed_img = preprocess_image_array(face_image)
-                prediction = model.predict(processed_img, verbose=0)
-
-                from predict import decode_prediction
-                label, confidence, _ = decode_prediction(prediction)
+                prediction = predict_image(raw_bytes)
+                label = prediction["label"]
+                confidence = prediction["confidence"]
+                processed_img = prediction["processed_image"]
 
             except PreprocessingError as e:
                 logger.error(f"PreprocessingError for {uploaded_file.name}: {e}", exc_info=True)
