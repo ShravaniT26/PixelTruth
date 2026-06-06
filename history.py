@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH = os.getenv("PIXELTRUTH_DB_PATH", "pixeltruth_history.db")
@@ -27,7 +27,7 @@ def save_prediction(filename, verdict, confidence_pct, face_detected, db_path=DB
     """
     Saves a single prediction to the database.
     """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # UTC ISO-8601 (CWE-840 fix)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("""
