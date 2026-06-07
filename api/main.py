@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 
 # Import our unified predict pipeline
 from predict import predict_image
+from config import LOW_CONFIDENCE_THRESHOLD
 from exceptions import PreprocessingError, ModelExecutionError
 from api.task_store import TaskStore, TaskResult
 
@@ -96,9 +97,12 @@ task_store = TaskStore()
 
 
 def _format_inference_response(result: dict) -> dict:
+    confidence = result["confidence"]
     return {
         "verdict": result["label"],
-        "confidence": result["confidence"],
+        "confidence": confidence,
+        "is_uncertain": confidence < LOW_CONFIDENCE_THRESHOLD,   # CWE-116/345 fix
+        "confidence_threshold": LOW_CONFIDENCE_THRESHOLD,
         "raw_scores": result["raw"],
         "face_detected": result.get("face_detected", False),
         "face_box": list(result["face_box"]) if result.get("face_box") is not None else None,

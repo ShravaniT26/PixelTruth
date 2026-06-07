@@ -1,5 +1,4 @@
 import os
-import numpy as np
 import pandas as pd
 from datetime import datetime
 import streamlit as st
@@ -214,8 +213,9 @@ if "history_loaded_from_db" not in st.session_state:
         st.session_state.history_loaded_from_db = True
 
 
-def predict_image(image):
-    return _shared_predict_image(image)
+def predict_image(image, **kwargs):
+    """Thin wrapper around the shared predict_image; forwards all kwargs (e.g. temperature)."""
+    return _shared_predict_image(image, **kwargs)
 
 
 # ----------------------- HEADER / HERO ---------------------
@@ -233,7 +233,7 @@ st.markdown(
 if os.path.exists("coverpage.png"):
     st.image(
         "coverpage.png",
-        use_column_width=True
+        use_container_width=True
     )
 
 # ----------------------- TOP INFO SECTION ------------------
@@ -278,13 +278,13 @@ col_plot1, col_plot2 = st.columns(2)
 
 with col_plot1:
     if os.path.exists("Figure_1.png"):
-        st.image("Figure_1.png", use_column_width=True, caption="Training History")
+        st.image("Figure_1.png", use_container_width=True, caption="Training History")
     else:
         st.warning("Missing image: Figure_1.png")
 
 with col_plot2:
     if os.path.exists("Figure_2.png"):
-        st.image("Figure_2.png", use_column_width=True, caption="Evaluation Metrics")
+        st.image("Figure_2.png", use_container_width=True, caption="Evaluation Metrics")
     else:
         st.warning("Missing image: Figure_2.png")
 
@@ -332,7 +332,16 @@ with col_right:
         batch_results = []
         batch_errors = []
 
+        # Guard: initialise accumulators used across both loops below
+        uploaded_hashes: set = set()
+        file_bytes_map: dict = {}
+
+        # Guard: initialise current_predictions if not already in session state
+        if "current_predictions" not in st.session_state:
+            st.session_state.current_predictions = {}
+
         progress_bar = st.progress(0, text="Analysing images…")
+
 
         for idx, uploaded_file in enumerate(uploaded_files):
             progress_bar.progress(
@@ -424,7 +433,16 @@ with col_right:
             box_image = bgr_image.copy()
 
             try:
-                face_image, face_box = detect_and_crop_face(bgr_image)
+                # Run prediction — face detection happens once inside predict_image.
+                # We reuse its face_image / face_box rather than calling
+                # detect_and_crop_face a second time.
+                prediction = predict_image(raw_bytes, temperature=CALIBRATION_TEMPERATURE)
+                label = prediction["label"]
+                confidence = prediction["confidence"]
+                processed_img = prediction["processed_image"]
+                raw_pred_array = prediction["raw_prediction"]
+                face_image = prediction.get("face_image", bgr_image)
+                face_box = prediction.get("face_box")
 
                 if face_box is not None:
                     face_detected = True
@@ -438,12 +456,6 @@ with col_right:
                         (94, 219, 120),
                         3
                     )
-
-                prediction = predict_image(raw_bytes, temperature=CALIBRATION_TEMPERATURE)
-                label = prediction["label"]
-                confidence = prediction["confidence"]
-                processed_img = prediction["processed_image"]
-                raw_pred_array = prediction["raw_prediction"]
 
             except PreprocessingError as e:
                 logger.error(f"PreprocessingError for {uploaded_file.name}: {e}", exc_info=True)
@@ -536,7 +548,9 @@ with col_right:
 
             st.session_state.prediction_csv = None
 
-        progress_bar.empty()
+        if progress_bar is not None:
+            progress_bar.empty()
+
 
         if batch_results:
             total = len(batch_results)
@@ -578,7 +592,7 @@ with col_right:
                             res["box_image"],
                             channels="BGR",
                             caption="Uploaded image (face detected)",
-                            use_column_width=True,
+                            use_container_width=True,
                         )
 
                         st.markdown(
@@ -593,7 +607,7 @@ with col_right:
                                 res["face_image"],
                                 channels="BGR",
                                 caption="Detected face region",
-                                use_column_width=True,
+                                use_container_width=True,
                             )
 
                         with crop_col2:
@@ -602,7 +616,7 @@ with col_right:
                                     res["gradcam"],
                                     channels="BGR",
                                     caption="Grad-CAM face details",
-                                    use_column_width=True,
+                                    use_container_width=True,
                                 )
 
                     else:
@@ -610,7 +624,7 @@ with col_right:
                             res["bgr_image"],
                             channels="BGR",
                             caption="Uploaded image (no face detected, full image analyzed)",
-                            use_column_width=True,
+                            use_container_width=True,
                         )
 
                         if res["gradcam"] is not None:
@@ -618,7 +632,7 @@ with col_right:
                                 res["gradcam"],
                                 channels="BGR",
                                 caption="Grad-CAM attention map (full image)",
-                                use_column_width=True,
+                                use_container_width=True,
                             )
 
                     if res["ela_image"] is not None:
