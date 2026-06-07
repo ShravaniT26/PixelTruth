@@ -45,6 +45,8 @@ def test_api_returns_prediction(monkeypatch):
         "raw_scores": [0.8],
         "face_detected": True,
         "face_box": [10, 20, 30, 40],
+        "confidence_threshold": 0.7,
+        "is_uncertain": False,
     }
     assert provided_inputs == [b"data"]
 
@@ -68,6 +70,8 @@ def test_api_returns_prediction_without_face_metadata(monkeypatch):
         "raw_scores": [0.2],
         "face_detected": False,
         "face_box": None,
+        "confidence_threshold": 0.7,
+        "is_uncertain": True,
     }
 
 

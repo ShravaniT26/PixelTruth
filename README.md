@@ -110,8 +110,19 @@ PixelTruth also needs a trained model file before it can make predictions.
 Set a direct download URL for the trained model (for example, a GitHub Release asset) and the app will fetch it automatically when it starts:
 
 ```bash
+# On Linux/macOS
 export PIXELTRUTH_MODEL_URL=https://your-release-link/deepfake_detection_model.h5
 export PIXELTRUTH_MODEL_SHA256=<optional-sha256>
+streamlit run app.py
+
+# On Windows (Command Prompt)
+set PIXELTRUTH_MODEL_URL=https://your-release-link/deepfake_detection_model.h5
+set PIXELTRUTH_MODEL_SHA256=<optional-sha256>
+streamlit run app.py
+
+# On Windows (PowerShell)
+$env:PIXELTRUTH_MODEL_URL="https://your-release-link/deepfake_detection_model.h5"
+$env:PIXELTRUTH_MODEL_SHA256="<optional-sha256>"
 streamlit run app.py
 ```
 
@@ -132,7 +143,16 @@ python scripts/download_model.py --url https://your-release-link/deepfake_detect
 If you keep the model in a different folder, export the path before launching Streamlit:
 
 ```bash
+# On Linux/macOS
 export PIXELTRUTH_MODEL_PATH=/full/path/to/deepfake_detection_model.h5
+streamlit run app.py
+
+# On Windows (Command Prompt)
+set PIXELTRUTH_MODEL_PATH=C:\full\path\to\deepfake_detection_model.h5
+streamlit run app.py
+
+# On Windows (PowerShell)
+$env:PIXELTRUTH_MODEL_PATH="C:\full\path\to\deepfake_detection_model.h5"
 streamlit run app.py
 ```
 
@@ -168,9 +188,14 @@ Then open your browser at `http://localhost:8501`, upload an image, and get inst
 PixelTruth/
 ├── app.py              # Streamlit dashboard
 ├── predict.py          # Inference logic
-├── train.py            # Model training (v1)
-├── train_v2.py         # Model training (v2)
-├── train_v3.py         # Model training (v3)
+├── experiments/        # Model training & experiments
+│   ├── train.py        # Model training (v1)
+│   ├── train_v2.py     # Model training (v2)
+│   └── train_v3.py     # Model training (v3)
+├── scripts/            # Helper scripts
+│   ├── download_model.py  # Model download helper
+│   ├── create_dummy_model.py
+│   └── check_merge_conflicts.py
 ├── requirements.txt    # Dependencies
 ├── Figure_1.png        # Training result plot
 ├── Figure_2.png        # Evaluation plot

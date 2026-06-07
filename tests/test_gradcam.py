@@ -246,3 +246,29 @@ def test_gradcam_end_to_end_pipeline():
     overlay = overlay_heatmap(fake_bgr, heatmap)
     assert overlay.shape == fake_bgr.shape
     assert overlay.dtype == np.uint8
+
+
+def test_overlay_heatmap_does_not_invert_channels():
+    from gradcam import overlay_heatmap
+    
+    # 1. Create a black BGR image
+    image = np.zeros((10, 10, 3), dtype=np.uint8)
+    
+    # 2. Create a heatmap filled with 1.0 (maximum intensity)
+    heatmap = np.ones((10, 10), dtype=np.float32)
+    
+    # 3. Overlay the heatmap on the black image (alpha=1.0 so we only see the heatmap)
+    overlay = overlay_heatmap(image, heatmap, alpha=1.0)
+    
+    # 4. Under cv2.COLORMAP_JET:
+    # Max intensity (1.0) corresponds to pure red.
+    # In BGR color space, pure red is [0, 0, 255] (B=0, G=0, R=255).
+    # Since our background image is black and alpha=1.0, the output should be BGR red,
+    # meaning the red channel (index 2) must be significantly higher than the blue channel (index 0).
+    # If BGR->RGB was mistakenly applied, the red and blue channels would be swapped,
+    # resulting in BGR blue [255, 0, 0].
+    b_val = int(overlay[0, 0, 0])
+    r_val = int(overlay[0, 0, 2])
+    
+    assert r_val > 100, f"Expected high red channel value, got {r_val}"
+    assert b_val < 50, f"Expected low blue channel value, got {b_val}"
