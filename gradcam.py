@@ -133,12 +133,14 @@ def make_gradcam_heatmap(img_array, model, last_conv_layer, pred_index=None):
                 if layer == sub_model:
                     if grad_sub_model is not None:
                         conv_outputs, current = grad_sub_model(current)
+                        tape.watch(conv_outputs)  # Bug #1 fix: EagerTensors not auto-watched
                     else:
                         # Sequential sub-model execution
                         for sub_layer in sub_model.layers:
                             current = sub_layer(current)
                             if sub_layer == last_conv_layer:
                                 conv_outputs = current
+                                tape.watch(conv_outputs)  # Bug #1 fix: watch intermediate tensor
                 elif layer == last_conv_layer:
                     current = layer(current)
                     conv_outputs = current
@@ -183,6 +185,14 @@ def make_gradcam_heatmap(img_array, model, last_conv_layer, pred_index=None):
             class_channel = predictions[:, pred_index]
 
     grads = tape.gradient(class_channel, conv_outputs)
+    # Bug #2 fix: guard against disconnected computation graph
+    if grads is None:
+        raise ValueError(
+            "tape.gradient() returned None for conv_outputs. "
+            "Ensure tape.watch(conv_outputs) is called inside the GradientTape context "
+            "before conv_outputs is assigned. This happens when conv_outputs is an "
+            "EagerTensor (not a tf.Variable) produced inside the tape context."
+        )
     pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
     conv_outputs = conv_outputs[0]
     heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
@@ -198,5 +208,6 @@ def overlay_heatmap(image, heatmap, alpha=0.4):
     heatmap = cv2.resize(heatmap, (image.shape[1], image.shape[0]))
     heatmap = np.uint8(255 * heatmap)
     heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)  # Bug #4 fix: applyColorMap outputs BGR, image is RGB
     superimposed_img = cv2.addWeighted(image, 1 - alpha, heatmap, alpha, 0)
     return superimposed_img
