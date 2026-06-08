@@ -206,6 +206,12 @@ if "history_loaded_from_db" not in st.session_state:
         if persisted_rows and not st.session_state.prediction_history:
             st.session_state.prediction_history = list(persisted_rows)[-MAX_HISTORY_ENTRIES:]
 
+        # Populate prediction_history_hashes with the hashes of loaded history
+        for entry in st.session_state.prediction_history:
+            h = entry.get("_hash")
+            if h:
+                st.session_state.prediction_history_hashes.add(h)
+
         st.session_state.history_loaded_from_db = True
 
     except Exception as e:
@@ -506,7 +512,7 @@ with col_right:
             except Exception as e:
                 logger.warning(f"ELA failed for {uploaded_file.name}: {e}")
 
-            batch_results.append({
+            prediction_result = {
                 "filename": uploaded_file.name,
                 "label": label,
                 "confidence": confidence,
@@ -520,10 +526,12 @@ with col_right:
                 "exif": exif_data,
                 "ela_image": ela_image,
                 "ela_score": ela_score,
-            })
+            }
+
+            batch_results.append(prediction_result)
+            st.session_state.current_predictions[entry_hash] = prediction_result
 
             entry_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            entry_hash = hashlib.sha256(raw_bytes).hexdigest()
 
             if entry_hash not in st.session_state.prediction_history_hashes:
                 history_entry = {
@@ -542,6 +550,7 @@ with col_right:
                     verdict=label,
                     confidence_pct=round(confidence * 100, 1),
                     face_detected=int(face_detected),
+                    image_hash=entry_hash,
                 )
 
                 while len(st.session_state.prediction_history) > MAX_HISTORY_ENTRIES:
