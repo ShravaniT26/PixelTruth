@@ -308,6 +308,11 @@ with col_left:
         label_visibility="collapsed",
     )
 
+    if uploaded_files is None:
+        uploaded_files = []
+    else:
+        uploaded_files = [f for f in uploaded_files if f is not None]
+
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col_right:

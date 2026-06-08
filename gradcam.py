@@ -208,6 +208,5 @@ def overlay_heatmap(image, heatmap, alpha=0.4):
     heatmap = cv2.resize(heatmap, (image.shape[1], image.shape[0]))
     heatmap = np.uint8(255 * heatmap)
     heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-    heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)  # Bug #4 fix: applyColorMap outputs BGR, image is RGB
     superimposed_img = cv2.addWeighted(image, 1 - alpha, heatmap, alpha, 0)
     return superimposed_img
