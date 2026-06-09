@@ -103,7 +103,8 @@ class TaskStore:
     def get_task(self, task_id: str) -> Optional[TaskResult]:
         """Return the current snapshot for *task_id*, or ``None``."""
         with self._lock:
-            return self._tasks.get(task_id)
+            task = self._tasks.get(task_id)
+            return task.model_copy(deep=True) if task is not None else None
 
     def mark_running(self, task_id: str) -> None:
         """Transition a task to RUNNING."""
