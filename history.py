@@ -21,9 +21,15 @@ def init_db(db_path=DB_PATH):
                 face_detected INTEGER NOT NULL DEFAULT 0
             )
         """)
+        # Safe migration: add image_hash if it doesn't exist
+        try:
+            cursor.execute("ALTER TABLE predictions ADD COLUMN image_hash TEXT")
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
         conn.commit()
 
-def save_prediction(filename, verdict, confidence_pct, face_detected, db_path=DB_PATH):
+def save_prediction(filename, verdict, confidence_pct, face_detected, image_hash=None, db_path=DB_PATH):
     """
     Saves a single prediction to the database.
     """
@@ -31,9 +37,9 @@ def save_prediction(filename, verdict, confidence_pct, face_detected, db_path=DB
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO predictions (timestamp, filename, verdict, confidence_pct, face_detected)
-            VALUES (?, ?, ?, ?, ?)
-        """, (timestamp, filename, verdict, confidence_pct, face_detected))
+            INSERT INTO predictions (timestamp, filename, verdict, confidence_pct, face_detected, image_hash)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (timestamp, filename, verdict, confidence_pct, face_detected, image_hash))
         conn.commit()
 
 def load_history(limit=200, db_path=DB_PATH):
@@ -43,23 +49,38 @@ def load_history(limit=200, db_path=DB_PATH):
     """
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT filename, verdict, confidence_pct, timestamp, face_detected
-            FROM predictions
-            ORDER BY id DESC
-            LIMIT ?
-        """, (limit,))
-        rows = cursor.fetchall()
+        # Fallback to support databases where the image_hash column hasn't been added yet
+        try:
+            cursor.execute("""
+                SELECT filename, verdict, confidence_pct, timestamp, face_detected, image_hash
+                FROM predictions
+                ORDER BY id DESC
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            has_hash = True
+        except sqlite3.OperationalError:
+            cursor.execute("""
+                SELECT filename, verdict, confidence_pct, timestamp, face_detected
+                FROM predictions
+                ORDER BY id DESC
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            has_hash = False
 
     history = []
     for row in rows:
-        history.append({
+        entry = {
             "Filename": row[0],
             "Result": row[1],
             "Confidence (%)": f"{row[2]:.1f}",
             "Timestamp": row[3],
             "Face Detected": bool(row[4])
-        })
+        }
+        if has_hash and len(row) > 5 and row[5] is not None:
+            entry["_hash"] = row[5]
+        history.append(entry)
     return history
 
 def clear_history(db_path=DB_PATH):
