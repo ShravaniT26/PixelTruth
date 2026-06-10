@@ -50,6 +50,11 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+def sanitize_csv_value(value):
+    """Prevent CSV formula injection by prefixing dangerous characters."""
+    if isinstance(value, str) and value.startswith(('=', '+', '-', '@', '\t', '\r')):
+        return "'" + value
+    return value
 
 st.set_page_config(
     page_title="PixelTruth",
@@ -527,8 +532,8 @@ with col_right:
 
             if entry_hash not in st.session_state.prediction_history_hashes:
                 history_entry = {
-                    "Filename": uploaded_file.name,
-                    "Result": label,
+                    "Filename": sanitize_csv_value(uploaded_file.name),
+                    "Result": sanitize_csv_value(label),
                     "Confidence (%)": f"{confidence * 100:.1f}",
                     "Timestamp": entry_timestamp,
                     "_hash": entry_hash,
